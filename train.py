@@ -239,10 +239,11 @@ with torch.no_grad():
         batch_test['input_ids'] = batch_test['input_ids'].to(device)
         batch_test['attention_mask'] = batch_test['attention_mask'].to(device)
         results_ids += batch_test['ids']
+        input_len = batch_test["input_ids"].shape[1] 
         del batch_test['labels']
         del batch_test['ids']
         outputs = model.module.generate(**batch_test, max_new_tokens=30)
-        results +=  tokenizer.batch_decode(outputs, skip_special_tokens=True)
+        results +=  tokenizer.batch_decode(outputs[:, input_len:], skip_special_tokens=True)
         if idx > 4:
             print(f"Process {local_rank} finished {idx+1} batches")
             break
