@@ -210,7 +210,7 @@ else:
 
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModelForCausalLM.from_pretrained(model_name,dtype = torch.float16)
-
+model.config.enable_thinking = False 
 model = model.eval()
 
 dataset = load_dataset("squad_v2",split="train",  download_mode=DownloadMode.REUSE_DATASET_IF_EXISTS)
