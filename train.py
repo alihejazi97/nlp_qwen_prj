@@ -243,7 +243,7 @@ with torch.no_grad():
         del batch_test['ids']
         outputs = model.module.generate(**batch_test, max_new_tokens=30)
         results +=  tokenizer.batch_decode(outputs, skip_special_tokens=True)
-        if idx == 4:
+        if idx == 32:
             break
 
 json_result = {}
