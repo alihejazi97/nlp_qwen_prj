@@ -145,12 +145,12 @@ training_args = TrainingArguments(
 )
 
 
-data_collator = DataCollatorForSeq2Seq(
-    tokenizer=tokenizer,
-    padding=True,
-    label_pad_token_id=-100,
-    return_tensors="pt"
-)
+def causal_lm_collator(features):
+    return tokenizer.pad(
+        features,
+        padding=True,
+        return_tensors="pt"
+    )
 
 trainer = Trainer(
     model=model,
@@ -158,7 +158,7 @@ trainer = Trainer(
     train_dataset=train_dataset,
     eval_dataset=validation_dataset,
     tokenizer=tokenizer,
-    data_collator=data_collator
+    data_collator=causal_lm_collator
 )
 
 trainer.train()
