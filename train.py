@@ -59,7 +59,7 @@ def reset_train_dict():
   train_dict['batch_count'] = 0
   return train_dict
 
-def split_dataset(dataset, validation_split=0.0005):
+def split_dataset(dataset, validation_split=0.0001):
     # Split the train dataset into training and validation sets
     split_dataset = dataset.train_test_split(test_size=validation_split, seed = RANDOM_SEED)
     return split_dataset['train'], split_dataset['test']
@@ -419,7 +419,6 @@ training_args = TrainingArguments(
     learning_rate=1e-4,
     per_device_train_batch_size=8,
     per_device_eval_batch_size=8,
-    num_train_epochs=1,
     max_steps=2,
     weight_decay=0.01,
     logging_dir="/kaggle/working/lora_runs",
@@ -437,8 +436,8 @@ training_args = TrainingArguments(
 trainer = Trainer(
     model=model,
     args=training_args,
-    train_dataset=dataset["train"],
-    eval_dataset=dataset["validation"],
+    train_dataset=train_dataset,
+    eval_dataset=validation_dataset,
     tokenizer=tokenizer,
     data_collator=causal_lm_collator,
     compute_metrics=compute_metrics,
