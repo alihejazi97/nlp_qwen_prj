@@ -116,13 +116,14 @@ def get_labels(batch_input):
             labels.append(1)
     return torch.tensor(labels)
 
-
 def check_we_are_in_colab():
     try:
         import google.colab
         return True
     except ImportError:
         return False
+    
+
 
 def get_summary_writer():
   if check_we_are_in_colab():
@@ -170,6 +171,7 @@ def get_ans(answers_list):
 def collate_fn(batch):
     output = get_input_batch(batch, tokenizer, YES_NO_TEMPLATE)
     output['ids'] = [bat['id'] for bat in batch]
+    output['questions'] = [bat['question'] for bat in batch]
     output['labels'] = [get_ans(bat['answers']['text']) for bat in batch]
     return output
 
@@ -233,6 +235,7 @@ sampler = DistributedSampler(dataset_test)
 loader = DataLoader(dataset_test, batch_size=8, collate_fn=collate_fn, shuffle=False, sampler=sampler)
 results = []
 results_ids = []
+results_questions = []
 labels_true = []
 labels_pred = []
 with torch.no_grad():
@@ -240,9 +243,11 @@ with torch.no_grad():
         batch_test['input_ids'] = batch_test['input_ids'].to(device)
         batch_test['attention_mask'] = batch_test['attention_mask'].to(device)
         results_ids += batch_test['ids']
+        results_questions += batch_test['questions']
         input_len = batch_test["input_ids"].shape[1] 
         del batch_test['labels']
         del batch_test['ids']
+        del batch_test['questions']
         outputs = model.module.generate(**batch_test, max_new_tokens=30)
         results +=  tokenizer.batch_decode(outputs[:, input_len:], skip_special_tokens=True)
         if idx > 4:
@@ -253,10 +258,13 @@ json_result = {}
 for k , v in zip(results_ids, results):
    json_result[k] = v
 
-json_result['len ids'] = len(results_ids)
-json_result['len results'] = len(results)
+json_questions = {}
+for k , v in zip(results_ids, results_questions):
+   json_result[k] = v
 
 import json
 
 with open(f'/kaggle/working/results_{local_rank}.json', 'w') as f:
     json.dump(json_result, f)   
+with open(f'/kaggle/working/ques_{local_rank}.json', 'w') as f:
+    json.dump(json_questions, f)   
