@@ -31,7 +31,7 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 import os
 
-DEFAULT_TEMPLATE = "Answer the question using only the given context. : \n\nContext: {} \n\nQuestion: {} \n\nAnswer: "
+DEFAULT_TEMPLATE = "Answer the question using only the given context(if can the question can not be answered do not print anything.). : \n\nContext: {} \n\nQuestion: {} \n\nAnswer: "
 YES_NO_TEMPLATE = "Is the Question answerable from Context? (Answer with yes and no) : \n\nContext: {} \n\nQuestion: {} \n\nAnswer: "
 MAX_EPOCHS = 1
 MAX_ITERATION = 1000
