@@ -237,6 +237,7 @@ labels_pred = []
 with torch.no_grad():
     for idx,batch_test in enumerate(loader):
         batch_test['input_ids'] = batch_test['input_ids'].to(device)
+        batch_test['attention_mask'] = batch_test['attention_mask'].to(device)
         results_ids += batch_test['ids']
         del batch_test['labels']
         del batch_test['ids']
