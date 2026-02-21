@@ -100,7 +100,8 @@ def get_input_batch(batch_input, tokenizer, template=DEFAULT_TEMPLATE):
         texts.append(tokenizer.apply_chat_template(
             [format_input_text(bat['context'], bat['question'], template)],
             tokenize=False,
-            add_generation_prompt=True
+            add_generation_prompt=True,
+            enable_thinking=False
         ))
 
     return tokenizer(texts, padding=True, truncation=True, return_tensors="pt")
@@ -210,7 +211,7 @@ else:
 
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModelForCausalLM.from_pretrained(model_name,dtype = torch.float16)
-model.config.enable_thinking = False 
+
 model = model.eval()
 
 dataset = load_dataset("squad_v2",split="train",  download_mode=DownloadMode.REUSE_DATASET_IF_EXISTS)
