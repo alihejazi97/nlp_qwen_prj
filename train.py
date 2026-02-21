@@ -244,6 +244,7 @@ with torch.no_grad():
         outputs = model.module.generate(**batch_test, max_new_tokens=30)
         results +=  tokenizer.batch_decode(outputs, skip_special_tokens=True)
         if idx > 4:
+            print(f"Process {local_rank} finished {idx+1} batches")
             break
 
 json_result = {}
