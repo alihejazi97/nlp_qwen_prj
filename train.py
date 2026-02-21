@@ -248,7 +248,7 @@ with torch.no_grad():
         del batch_test['labels']
         del batch_test['ids']
         del batch_test['questions']
-        outputs = model.module.generate(**batch_test, max_new_tokens=30)
+        outputs = model.module.generate(**batch_test, max_new_tokens=70)
         results +=  tokenizer.batch_decode(outputs[:, input_len:], skip_special_tokens=True)
         if idx > 4:
             print(f"Process {local_rank} finished {idx+1} batches")
