@@ -260,7 +260,7 @@ for k , v in zip(results_ids, results):
 
 json_questions = {}
 for k , v in zip(results_ids, results_questions):
-   json_result[k] = v
+   json_questions[k] = v
 
 import json
 
