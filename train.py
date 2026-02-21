@@ -52,6 +52,7 @@ torch.cuda.manual_seed_all(RANDOM_SEED)
 
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
+   
 
 def reset_train_dict():
   train_dict = {}
@@ -250,9 +251,6 @@ with torch.no_grad():
         del batch_test['questions']
         outputs = model.module.generate(**batch_test, max_new_tokens=70)
         results +=  tokenizer.batch_decode(outputs[:, input_len:], skip_special_tokens=True)
-        if idx > 4:
-            print(f"Process {local_rank} finished {idx+1} batches")
-            break
 
 json_result = {}
 for k , v in zip(results_ids, results):
