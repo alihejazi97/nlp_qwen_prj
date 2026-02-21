@@ -35,6 +35,19 @@ from tqdm.auto import tqdm
 import random
 import warnings
 from sklearn.exceptions import UndefinedMetricWarning
+from peft import LoraConfig, get_peft_model
+
+DEFAULT_TEMPLATE = "Answer the question using only the given context(if can the question can not be answered do not print anything.). : \n\nContext: {} \n\nQuestion: {} \n\nAnswer: "
+MAX_EPOCHS = 1
+MAX_ITERATION = 1000
+TRAIN_LOG_STEP = 10
+RANDOM_SEED = 14
+NUM_CLASSES = 2
+VALIDATION_LOG_STEP = TRAIN_LOG_STEP * 5
+RANGE_MIN = 12
+RANGE_MAX = 14
+EXPERIMENT_NAME = "/kaggle/working/gru_linear_probe_12_13_1000_maskcorrected"
+
 warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
 
 def reset_train_dict():
@@ -90,6 +103,25 @@ def get_input_batch(batch_input, tokenizer, template=DEFAULT_TEMPLATE):
 
     return tokenizer(texts, padding=True, truncation=True, return_tensors="pt")
 
+def get_output_batch(batch_input, tokenizer, template=DEFAULT_TEMPLATE):
+    answers = []
+    for bat in batch_input:
+        if len(bat['answers']['text']) > 0:
+            answers.append(tokenizer.apply_chat_template(
+                [format_input_text(bat['answers']['text'][0], template)],
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False
+            ))
+        else:
+           answers.append(tokenizer.apply_chat_template(
+                '.',
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False
+            ))
+
+    return tokenizer(answers, padding=True, truncation=True, return_tensors="pt")
 
 def get_labels(batch_input):
     labels = []
@@ -156,7 +188,7 @@ def collate_fn(batch):
     output = get_input_batch(batch, tokenizer, DEFAULT_TEMPLATE)
     output['ids'] = [bat['id'] for bat in batch]
     output['questions'] = [bat['question'] for bat in batch]
-    output['labels'] = [get_ans(bat['answers']['text']) for bat in batch]
+    output['labels'] = get_output_batch(batch, tokenizer)
     return output
 
 def print_tokens_with_pos(inputs):
@@ -168,6 +200,71 @@ def print_tokens_with_pos(inputs):
       else: 
           print(f'{token_idx} -- {token}    ', end = "")
   print('')
+
+
+
+def causal_lm_collator(batch, tokenizer, max_length=512):
+    """
+    batch: list of raw examples with keys:
+        - context
+        - question
+        - answers: {"text": [...], "answer_start": [...]}
+    tokenizer: PreTrainedTokenizerBase
+    """
+    input_ids_list = []
+    attention_mask_list = []
+    labels_list = []
+
+    for ex in batch:
+        # Tokenize context + question
+        tok = tokenizer(
+            format_input_text(ex["context"], ex["question"], DEFAULT_TEMPLATE),
+            truncation=True,
+            max_length=max_length,
+            return_offsets_mapping=True
+        )
+        ids = tok["input_ids"]
+        offsets = tok["offset_mapping"]
+
+        # Take the first answer
+        answer_text = ex["answers"]["text"][0]
+        answer_start_char = ex["answers"]["answer_start"][0]
+        answer_end_char = answer_start_char + len(answer_text)
+
+        # Find answer token positions
+        start_token = None
+        end_token = None
+        for i, (s, e) in enumerate(offsets):
+            if s <= answer_start_char < e:
+                start_token = i
+            if s < answer_end_char <= e:
+                end_token = i
+        if start_token is None or end_token is None:
+            # fallback: put answer at end (rare)
+            start_token = len(ids) - 1
+            end_token = len(ids) - 1
+
+        # Build labels: -100 for context + question, token IDs for answer
+        labels = [-100] * len(ids)
+        for i in range(start_token, end_token + 1):
+            labels[i] = ids[i]
+
+        # Pad to max_length
+        pad_len = max_length - len(ids)
+        ids = ids + [tokenizer.pad_token_id] * pad_len
+        labels = labels + [-100] * pad_len
+        attention_mask = [1] * len(tok["input_ids"]) + [0] * pad_len
+
+        input_ids_list.append(torch.tensor(ids, dtype=torch.long))
+        attention_mask_list.append(torch.tensor(attention_mask, dtype=torch.long))
+        labels_list.append(torch.tensor(labels, dtype=torch.long))
+
+    batch_out = {
+        "input_ids": torch.stack(input_ids_list),
+        "attention_mask": torch.stack(attention_mask_list),
+        "labels": torch.stack(labels_list)
+    }
+    return batch_out
 
 
 model_name = 'Qwen/Qwen3-0.6B'
@@ -184,6 +281,7 @@ dataset_ones = dataset.filter(lambda x: len(x['answers']['text']) > 0).select(ra
 
 
 tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForCausalLM.from_pretrained(model_name,dtype = torch.float16)
 
 max_length = 384
 doc_stride = 128
@@ -238,15 +336,7 @@ dataset = dataset.map(
     remove_columns=dataset["train"].column_names
 )
 
-# -----------------------
-# Model
-# -----------------------
 
-model = AutoModelForQuestionAnswering.from_pretrained(model_name)
-
-# -----------------------
-# Metric
-# -----------------------
 
 metric = evaluate.load("squad")
 
@@ -307,19 +397,32 @@ def compute_metrics(eval_pred):
         references=references
     )
 
-# -----------------------
-# Training arguments
-# -----------------------
+lora_config = LoraConfig(
+    r=8,                        # rank
+    lora_alpha=16,
+    target_modules=[
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj"
+    ],
+    lora_dropout=0.1,
+    bias="none",
+    task_type="QUESTION_ANS"    # important
+)
+
+model = get_peft_model(model, lora_config)
 
 training_args = TrainingArguments(
-    output_dir="./results",
+    output_dir="/kaggle/working/lora_results",
     evaluation_strategy="epoch",
-    learning_rate=3e-5,
+    learning_rate=1e-4,
     per_device_train_batch_size=8,
     per_device_eval_batch_size=8,
-    num_train_epochs=2,
+    num_train_epochs=1,
+    max_steps=5000,
     weight_decay=0.01,
-    logging_dir="./runs",
+    logging_dir="/kaggle/working/lora_runs",
     logging_steps=100,
     fp16=True,
     report_to="tensorboard",
@@ -337,7 +440,7 @@ trainer = Trainer(
     train_dataset=dataset["train"],
     eval_dataset=dataset["validation"],
     tokenizer=tokenizer,
-    data_collator=default_data_collator,
+    data_collator=causal_lm_collator,
     compute_metrics=compute_metrics,
 )
 
