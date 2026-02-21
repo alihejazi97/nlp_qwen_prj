@@ -281,7 +281,7 @@ dataset_zeros = dataset.filter(lambda x: len(x['answers']['text']) == 0)
 dataset_ones = dataset.filter(lambda x: len(x['answers']['text']) > 0).select(range(dataset_zeros.num_rows))
 
 
-tokenizer = AutoTokenizer.from_pretrained(model_name)
+tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left")
 model = AutoModelForCausalLM.from_pretrained(model_name,dtype = torch.float16)
 
 max_length = 384
