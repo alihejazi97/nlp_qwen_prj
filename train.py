@@ -250,6 +250,9 @@ json_result = {}
 for k , v in zip(results_ids, results):
    json_result[k] = v
 
+json_result['len ids'] = len(results_ids)
+json_result['len results'] = len(results)
+
 import json
 
 with open(f'/kaggle/working/results_{local_rank}.json', 'w') as f:
