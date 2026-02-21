@@ -245,3 +245,12 @@ with torch.no_grad():
         results +=  tokenizer.batch_decode(outputs, skip_special_tokens=True)
         if idx == 4:
             break
+
+json_result = {}
+for k , v in zip(results_ids, results):
+   json_result[k] = v
+
+import json
+
+with open(f'/kaggle/working/results_{local_rank}.json', 'w') as f:
+    json.dump(json_result, f)   
