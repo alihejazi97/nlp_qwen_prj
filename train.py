@@ -77,6 +77,7 @@ def get_input(context, question, tokenizer, template=DEFAULT_TEMPLATE):
 	add_generation_prompt=True,
 	tokenize=True,
 	return_dict=True,
+    left_pad=True,
     enable_thinking=False,
 	return_tensors="pt",)
     return inputs
