@@ -101,7 +101,7 @@ def get_input_batch(batch_input, tokenizer, template=DEFAULT_TEMPLATE):
             enable_thinking=False
         ))
 
-    return tokenizer(texts,padding_side='left', padding=True, truncation=True, return_tensors="pt")
+    return tokenizer(texts, padding=True, truncation=True, return_tensors="pt")
 
 def get_output_batch(batch_input, tokenizer, template=DEFAULT_TEMPLATE):
     answers = []
@@ -379,6 +379,7 @@ def compute_metrics(eval_pred):
 
         pred_text = tokenizer.decode(
             input_ids[start:end+1],
+            padding_side='left',
             skip_special_tokens=True
         )
 
