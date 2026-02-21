@@ -282,6 +282,7 @@ dataset_ones = dataset.filter(lambda x: len(x['answers']['text']) > 0).select(ra
 
 
 tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left")
+tokenizer.padding_side = "left"
 model = AutoModelForCausalLM.from_pretrained(model_name,dtype = torch.float16)
 
 max_length = 384
