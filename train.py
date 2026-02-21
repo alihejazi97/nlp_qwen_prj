@@ -34,7 +34,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm.auto import tqdm
 import random
 import warnings
-from transformers import DataCollatorForSeq2Seq
+from transformers import DataCollatorForLanguageModeling
 from sklearn.exceptions import UndefinedMetricWarning
 from peft import LoraConfig, get_peft_model
 
@@ -82,6 +82,7 @@ def tokenize_fun(example):
 
     return {
         "input_ids": full["input_ids"],
+        "attention_mask": full["attention_mask"],
         "labels": labels
     }
 
@@ -142,10 +143,9 @@ training_args = TrainingArguments(
 )
 
 
-data_collator = DataCollatorForSeq2Seq(
-    tokenizer,
-    padding='longest',
-    return_tensors="pt"
+data_collator = DataCollatorForLanguageModeling(
+    tokenizer=tokenizer,
+    mlm=False
 )
 
 trainer = Trainer(
@@ -154,7 +154,7 @@ trainer = Trainer(
     train_dataset=train_dataset,
     eval_dataset=validation_dataset,
     tokenizer=tokenizer,
-    data_collator=default_data_collator
+    data_collator=data_collator
 )
 
 trainer.train()
