@@ -1,3 +1,14 @@
+import numpy as np
+import torch
+from datasets import load_dataset
+from transformers import (
+    AutoTokenizer,
+    AutoModelForQuestionAnswering,
+    TrainingArguments,
+    Trainer,
+    default_data_collator,
+)
+import evaluate
 from datasets import load_dataset
 from datasets import DownloadMode
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -25,34 +36,6 @@ import random
 import warnings
 from sklearn.exceptions import UndefinedMetricWarning
 warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
-
-import torch
-import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
-import os
-
-DEFAULT_TEMPLATE = "Answer the question using only the given context(if can the question can not be answered do not print anything.). : \n\nContext: {} \n\nQuestion: {} \n\nAnswer: "
-YES_NO_TEMPLATE = "Is the Question answerable from Context? (Answer with yes and no) : \n\nContext: {} \n\nQuestion: {} \n\nAnswer: "
-MAX_EPOCHS = 1
-MAX_ITERATION = 1000
-TRAIN_LOG_STEP = 10
-RANDOM_SEED = 14
-NUM_CLASSES = 2
-VALIDATION_LOG_STEP = TRAIN_LOG_STEP * 5
-RANGE_MIN = 12
-RANGE_MAX = 14
-EXPERIMENT_NAME = "/kaggle/working/gru_linear_probe_12_13_1000_maskcorrected"
-LEARNING_RATE = 1e-3
-
-# setting random seed for deterministic result
-torch.manual_seed(RANDOM_SEED)
-np.random.seed(RANDOM_SEED)
-random.seed(RANDOM_SEED)
-torch.cuda.manual_seed_all(RANDOM_SEED)
-
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
-   
 
 def reset_train_dict():
   train_dict = {}
@@ -187,35 +170,11 @@ def print_tokens_with_pos(inputs):
   print('')
 
 
-activations = {}
-replace_activations = {}
-replace_position = 0
+model_name = 'Qwen/Qwen3-0.6B'
 
-def make_hook(name):
-    def hook(module, input, output):
-        if (name in activations) and (name in replace_activations) and (not replace_activations[name]):
-            output[:,replace_position,:] = activations[name][:,replace_position,:].to(DEVICE)
-            replace_activations[name] = True
-        elif (name not in activations):
-            activations[name] = output.detach()
-    return hook
-
-def zip_folder(folder_path, zip_name):
-  shutil.make_archive(zip_name, 'zip', folder_path)
-
-
-
-# Load model directly
-
-if check_we_are_in_colab():
-  model_name = 'Qwen/Qwen3-0.6B'
-else:
-  model_name = "./qwen0.6model/"
-
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForCausalLM.from_pretrained(model_name,dtype = torch.float16)
-
-model = model.eval()
+# -----------------------
+# Load dataset
+# -----------------------
 
 dataset = load_dataset("squad_v2",split="train",  download_mode=DownloadMode.REUSE_DATASET_IF_EXISTS)
 dataset_test = load_dataset("squad_v2",split="validation",  download_mode=DownloadMode.REUSE_DATASET_IF_EXISTS)
@@ -223,46 +182,163 @@ train_dataset, validation_dataset = split_dataset(dataset)
 dataset_zeros = dataset.filter(lambda x: len(x['answers']['text']) == 0)
 dataset_ones = dataset.filter(lambda x: len(x['answers']['text']) > 0).select(range(dataset_zeros.num_rows))
 
-local_rank = int(os.environ["LOCAL_RANK"])
 
-# Init process group
-dist.init_process_group("nccl", rank=local_rank, world_size=2)
+tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-device = torch.device(f"cuda:{local_rank}")
-model = model.to(device)
-model = DDP(model, device_ids=[local_rank], output_device=local_rank)
+max_length = 384
+doc_stride = 128
 
-sampler = DistributedSampler(dataset_test)
-loader = DataLoader(dataset_test, batch_size=8, collate_fn=collate_fn, shuffle=False, sampler=sampler)
-results = []
-results_ids = []
-results_questions = []
-labels_true = []
-labels_pred = []
-with torch.no_grad():
-    for idx,batch_test in enumerate(loader):
-        batch_test['input_ids'] = batch_test['input_ids'].to(device)
-        batch_test['attention_mask'] = batch_test['attention_mask'].to(device)
-        results_ids += batch_test['ids']
-        results_questions += batch_test['questions']
-        input_len = batch_test["input_ids"].shape[1] 
-        del batch_test['labels']
-        del batch_test['ids']
-        del batch_test['questions']
-        outputs = model.module.generate(**batch_test, max_new_tokens=70)
-        results +=  tokenizer.batch_decode(outputs[:, input_len:], skip_special_tokens=True)
+def preprocess(example):
 
-json_result = {}
-for k , v in zip(results_ids, results):
-   json_result[k] = v
+    tokenized = tokenizer(
+        format_input_text(example["context"], example["question"]),
+        truncation="only_second",
+        max_length=max_length,
+        stride=doc_stride,
+        return_offsets_mapping=True,
+        padding="max_length",
+    )
 
-json_questions = {}
-for k , v in zip(results_ids, results_questions):
-   json_questions[k] = v
+    offsets = tokenized.pop("offset_mapping")
 
-import json
+    start_positions = []
+    end_positions = []
 
-with open(f'/kaggle/working/results_{local_rank}.json', 'w') as f:
-    json.dump(json_result, f)   
-with open(f'/kaggle/working/ques_{local_rank}.json', 'w') as f:
-    json.dump(json_questions, f)   
+    for i, offset in enumerate(offsets):
+
+        answer = example["answers"][i]
+        start_char = answer["answer_start"][0]
+        end_char = start_char + len(answer["text"][0])
+
+        sequence_ids = tokenized.sequence_ids(i)
+
+        context_start = sequence_ids.index(1)
+        context_end = len(sequence_ids) - 1 - sequence_ids[::-1].index(1)
+
+        start_token = context_start
+        end_token = context_end
+
+        for idx in range(context_start, context_end+1):
+            if offset[idx][0] <= start_char <= offset[idx][1]:
+                start_token = idx
+            if offset[idx][0] <= end_char <= offset[idx][1]:
+                end_token = idx
+
+        start_positions.append(start_token)
+        end_positions.append(end_token)
+
+    tokenized["start_positions"] = start_positions
+    tokenized["end_positions"] = end_positions
+
+    return tokenized
+
+dataset = dataset.map(
+    preprocess,
+    batched=True,
+    remove_columns=dataset["train"].column_names
+)
+
+# -----------------------
+# Model
+# -----------------------
+
+model = AutoModelForQuestionAnswering.from_pretrained(model_name)
+
+# -----------------------
+# Metric
+# -----------------------
+
+metric = evaluate.load("squad")
+
+def postprocess(predictions, examples):
+
+    start_logits, end_logits = predictions
+
+    results = []
+
+    for i in range(len(start_logits)):
+
+        start = np.argmax(start_logits[i])
+        end = np.argmax(end_logits[i])
+
+        input_ids = examples[i]["input_ids"]
+
+        answer = tokenizer.decode(
+            input_ids[start:end+1],
+            skip_special_tokens=True
+        )
+
+        results.append(answer)
+
+    return results
+
+def compute_metrics(eval_pred):
+
+    start_logits, end_logits = eval_pred.predictions
+    labels = eval_pred.label_ids
+
+    predictions = []
+    references = []
+
+    for i in range(len(start_logits)):
+
+        start = np.argmax(start_logits[i])
+        end = np.argmax(end_logits[i])
+
+        input_ids = dataset["validation"][i]["input_ids"]
+
+        pred_text = tokenizer.decode(
+            input_ids[start:end+1],
+            skip_special_tokens=True
+        )
+
+        predictions.append({
+            "id": dataset["validation"][i]["id"],
+            "prediction_text": pred_text
+        })
+
+        references.append({
+            "id": dataset["validation"][i]["id"],
+            "answers": dataset["validation"][i]["answers"]
+        })
+
+    return metric.compute(
+        predictions=predictions,
+        references=references
+    )
+
+# -----------------------
+# Training arguments
+# -----------------------
+
+training_args = TrainingArguments(
+    output_dir="./results",
+    evaluation_strategy="epoch",
+    learning_rate=3e-5,
+    per_device_train_batch_size=8,
+    per_device_eval_batch_size=8,
+    num_train_epochs=2,
+    weight_decay=0.01,
+    logging_dir="./runs",
+    logging_steps=100,
+    fp16=True,
+    report_to="tensorboard",
+    save_strategy="epoch",
+    load_best_model_at_end=True,
+)
+
+# -----------------------
+# Trainer
+# -----------------------
+
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=dataset["train"],
+    eval_dataset=dataset["validation"],
+    tokenizer=tokenizer,
+    data_collator=default_data_collator,
+    compute_metrics=compute_metrics,
+)
+
+trainer.train()
