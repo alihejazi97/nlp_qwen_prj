@@ -77,7 +77,6 @@ def get_input(context, question, tokenizer, template=DEFAULT_TEMPLATE):
 	add_generation_prompt=True,
 	tokenize=True,
 	return_dict=True,
-    left_pad=True,
     enable_thinking=False,
 	return_tensors="pt",)
     return inputs
@@ -102,7 +101,7 @@ def get_input_batch(batch_input, tokenizer, template=DEFAULT_TEMPLATE):
             enable_thinking=False
         ))
 
-    return tokenizer(texts, padding=True, truncation=True, return_tensors="pt")
+    return tokenizer(texts,padding_side='left', padding=True, truncation=True, return_tensors="pt")
 
 def get_output_batch(batch_input, tokenizer, template=DEFAULT_TEMPLATE):
     answers = []
