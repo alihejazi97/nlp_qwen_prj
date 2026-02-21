@@ -60,35 +60,6 @@ def split_dataset(dataset, validation_split=0.0001):
 
 
 
-
-def tokenize_fun(example):
-
-    prompt = DEFAULT_TEMPLATE.format(
-        example["context"],
-        example["question"]
-    )
-
-    if len(example["answers"]["text"]) == 0:
-        answer = ""
-    else:
-        answer = example["answers"]["text"][0]
-
-    full_text = prompt + answer
-
-    full = tokenizer(full_text, truncation=True)
-    prompt_ids = tokenizer(prompt, truncation=True)["input_ids"]
-
-    labels = full["input_ids"].copy()
-
-    labels[:len(prompt_ids)] = [-100] * len(prompt_ids)
-
-    return {
-        "input_ids": full["input_ids"],
-        "attention_mask": full["attention_mask"],
-        "labels": labels
-    }
-
-
 model_name = 'Qwen/Qwen3-0.6B'
 
 # -----------------------
@@ -105,9 +76,32 @@ model = AutoModelForCausalLM.from_pretrained(model_name,dtype = torch.float16)
 tokenizer.pad_token = tokenizer.eos_token
 model.config.pad_token_id = tokenizer.pad_token_id
 
-train_dataset = train_dataset.map(tokenize_fun, remove_columns=train_dataset.column_names)
-validation_dataset = validation_dataset.map(tokenize_fun, remove_columns=validation_dataset.column_names)
-dataset_test = dataset_test.map(tokenize_fun, remove_columns=dataset_test.column_names)
+def tokenize_fun(examples):
+    prompts = [DEFAULT_TEMPLATE.format(c, q) for c, q in zip(examples["context"], examples["question"])]
+    answers = [a[0] if len(a) > 0 else "" for a in examples["answers"]["text"]]
+    full_texts = [p + a for p, a in zip(prompts, answers)]
+
+    full = tokenizer(full_texts, truncation=True, padding=False)
+    prompt_ids = tokenizer(prompts, truncation=True, padding=False)["input_ids"]
+
+    labels_masked = []
+    for l, p in zip(full["input_ids"], prompt_ids):
+        l[:len(p)] = [-100] * len(p)
+        labels_masked.append(l)
+
+    return {
+        "input_ids": full["input_ids"],
+        "attention_mask": full["attention_mask"],
+        "labels": labels_masked
+    }
+
+train_dataset = train_dataset.select(range(64))
+validation_dataset = validation_dataset.select(range(64))
+dataset_test = dataset_test.select(range(64))
+
+train_dataset = train_dataset.map(tokenize_fun, batched=True, batch_size=128, remove_columns=train_dataset.column_names)
+validation_dataset = validation_dataset.map(tokenize_fun, batched=True, batch_size=128, remove_columns=validation_dataset.column_names)
+dataset_test = dataset_test.map(tokenize_fun, batched=True, batch_size=128, remove_columns=dataset_test.column_names)
 
 max_length = 384
 doc_stride = 128
