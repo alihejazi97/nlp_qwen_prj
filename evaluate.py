@@ -204,16 +204,12 @@ def zip_folder(folder_path, zip_name):
   shutil.make_archive(zip_name, 'zip', folder_path)
 
 
-
 # Load model directly
 
-if check_we_are_in_colab():
-  model_name = 'Qwen/Qwen3-0.6B'
-else:
-  model_name = "./qwen0.6model/"
+model_name = "/kaggle/working/outputs/checkpoint-1000"
 
 tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForCausalLM.from_pretrained(model_name,dtype = torch.float16)
+model = AutoModelForCausalLM.from_pretrained(model_name, load_in_4bit=True, max_seq_length=2048, dtype=None)
 
 model = model.eval()
 
