@@ -220,6 +220,7 @@ def causal_lm_collator(batch, tokenizer, max_length=512):
         tok = tokenizer(
             format_input_text(ex["context"], ex["question"], DEFAULT_TEMPLATE),
             truncation=True,
+            padding_side='left',
             max_length=max_length,
             return_offsets_mapping=True
         )
@@ -291,6 +292,7 @@ def preprocess(example):
     tokenized = tokenizer(
         format_input_text(example["context"], example["question"]),
         truncation="only_second",
+        padding_side='left',
         max_length=max_length,
         stride=doc_stride,
         return_offsets_mapping=True,
@@ -355,6 +357,7 @@ def postprocess(predictions, examples):
 
         answer = tokenizer.decode(
             input_ids[start:end+1],
+            padding_side='left',
             skip_special_tokens=True
         )
 
