@@ -169,7 +169,7 @@ def get_ans(answers_list):
         return ' '
 
 def collate_fn(batch):
-    output = get_input_batch(batch, tokenizer, YES_NO_TEMPLATE)
+    output = get_input_batch(batch, tokenizer, DEFAULT_TEMPLATE)
     output['ids'] = [bat['id'] for bat in batch]
     output['questions'] = [bat['question'] for bat in batch]
     output['labels'] = [get_ans(bat['answers']['text']) for bat in batch]
