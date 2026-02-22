@@ -209,7 +209,7 @@ def zip_folder(folder_path, zip_name):
 model_name = "/kaggle/working/outputs/checkpoint-1000"
 
 tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForCausalLM.from_pretrained(model_name, load_in_4bit=True, max_seq_length=2048, dtype=None)
+model = AutoModelForCausalLM.from_pretrained(model_name)
 
 model = model.eval()
 
